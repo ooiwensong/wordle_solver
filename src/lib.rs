@@ -100,6 +100,83 @@ pub struct Guess {
     pub mask: [Correctness; 5],
 }
 
+impl Guess {
+    pub fn matches(&self, word: &str) -> bool {
+        assert_eq!(self.word.len(), 5);
+        assert_eq!(word.len(), 5);
+
+        // first check greens
+        let mut used = [false; 5];
+        for (i, ((g, &m), w)) in self
+            .word
+            .chars()
+            .zip(&self.mask)
+            .zip(word.chars())
+            .enumerate()
+        {
+            if m == Correctness::Correct {
+                if g != w {
+                    return false;
+                } else {
+                    used[i] = true;
+                    continue;
+                }
+            }
+        }
+        for (_, ((_, _), w)) in self
+            .word
+            .chars()
+            .zip(&self.mask)
+            .zip(word.chars())
+            .enumerate()
+        {
+            let mut plausible = true;
+            if self
+                .word
+                .chars()
+                .zip(&self.mask)
+                .enumerate()
+                .any(|(j, (g, m))| {
+                    if g != w {
+                        return false;
+                    }
+                    if used[j] {
+                        return false;
+                    }
+                    // we are looking at a 'w' in 'word' and have found a 'w' in the previous guess.
+                    // the colour of that previous 'w' will tell us whether this 'w' might be ok.
+                    match m {
+                        Correctness::Correct => unreachable!(
+                            "all correct guesses should have resulted in return or be used"
+                        ),
+                        Correctness::Misplaced if j == 1 => {
+                            // 'w'
+                            used[j] = true;
+                            return true;
+                        }
+                        Correctness::Misplaced => {
+                            used[j] = true;
+                            return true;
+                        }
+                        Correctness::Wrong => {
+                            plausible = false;
+                            return false;
+                        }
+                    }
+                })
+                && plausible
+            {
+                // the char 'w' was yellow in the previous guess
+            } else if !plausible {
+                return false;
+            } else {
+                // we have no info about char 'w', so word might still match
+            }
+        }
+        true
+    }
+}
+
 pub trait Guesser {
     // function that makes a guess; takes info of current guess progress as as arguments
     fn guess(&mut self, history: &[Guess]) -> String;
@@ -125,7 +202,29 @@ macro_rules! guesser {
 }
 
 #[cfg(test)]
+macro_rules! mask {
+    (C) => {$crate::Correctness::Correct};
+    (M) => {$crate::Correctness::Misplaced};
+    (W) => {$crate::Correctness::Wrong};
+    ($($c:tt)+) => {[
+        $(mask!($c)),+
+    ]}
+}
+
+#[cfg(test)]
 mod tests {
+    mod guess_matcher {
+        use crate::Guess;
+
+        #[test]
+        fn matches() {
+            assert!(Guess {
+                word: "abcde".to_string(),
+                mask: mask![C C C C C],
+            }
+            .matches("abcde"));
+        }
+    }
     mod game {
         use crate::{Guess, Wordle};
 
